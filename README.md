@@ -91,12 +91,17 @@ Use both together: Sisense MCP tells Claude what data you have, this server tell
 
 ## Updating docs
 
-When Sisense releases a new SDK version, replace `chunks.json` with a fresh export:
+Docs are pulled directly from the official [Sisense Compose SDK monorepo](https://github.com/sisense/compose-sdk-monorepo) (`docs-md/sdk/`). When Sisense releases a new SDK version:
 
 ```bash
-# From a deployed playground
-curl -o chunks.json https://ai-playground-prod-2.vercel.app/rag_index/chunks.json
+./scripts/update-docs.sh
 npm run build
+```
+
+To pull from a specific branch:
+
+```bash
+./scripts/update-docs.sh --branch dev
 ```
 
 ## Supported frameworks
@@ -104,3 +109,4 @@ npm run build
 - React
 - Vue
 - Angular
+
