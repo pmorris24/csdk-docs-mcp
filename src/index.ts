@@ -12,6 +12,7 @@ interface DocChunk {
   text: string;
   source: string;
   heading: string;
+  tags?: string[];  // "beta", "alpha", "internal", "fusionEmbed"
 }
 
 interface DocFile {
@@ -21,6 +22,34 @@ interface DocFile {
   content: string;
   sizeKb: number;
   description: string; // from INDEX.md or derived
+}
+
+// ── Tag Detection & Filtering ──
+
+const BADGE_RE = /<Badge\s+type="([^"]+)"\s+text="[^"]*"\s*\/?>/g;
+const TAG_RE = /@(internal|sisenseInternal|beta|alpha)\b/g;
+
+// Tags that should be completely excluded from results
+const EXCLUDED_TAGS = new Set(['internal', 'sisenseInternal']);
+
+// Tags that should be flagged with a warning
+const WARNING_TAGS = new Set(['beta', 'alpha']);
+
+function extractTags(text: string): string[] {
+  const tags = new Set<string>();
+  for (const m of text.matchAll(BADGE_RE)) tags.add(m[1]);
+  for (const m of text.matchAll(TAG_RE)) tags.add(m[1]);
+  return [...tags];
+}
+
+function hasExcludedTag(tags: string[]): boolean {
+  return tags.some(t => EXCLUDED_TAGS.has(t));
+}
+
+function getWarnings(tags: string[]): string {
+  const warnings = tags.filter(t => WARNING_TAGS.has(t));
+  if (warnings.length === 0) return '';
+  return `\n\n> **Warning:** This API is marked as ${warnings.join(', ')}. It may change without notice in future releases.`;
 }
 
 // ── TF-IDF Search Engine ──
@@ -51,14 +80,27 @@ class SearchEngine {
 
   load(docsDir: string): void {
     const chunksPath = join(docsDir, 'chunks.json');
+    let rawChunks: DocChunk[];
     try {
       const raw = readFileSync(chunksPath, 'utf-8');
-      this.chunks = JSON.parse(raw);
+      rawChunks = JSON.parse(raw);
     } catch {
-      this.chunks = this.loadFromMarkdown(docsDir);
+      rawChunks = this.loadFromMarkdown(docsDir);
     }
+
+    // Tag each chunk and filter out @internal / @sisenseInternal
+    let excluded = 0;
+    for (const chunk of rawChunks) {
+      chunk.tags = extractTags(chunk.text);
+      if (hasExcludedTag(chunk.tags)) {
+        excluded++;
+        continue;
+      }
+      this.chunks.push(chunk);
+    }
+
     this.buildIndex();
-    process.stderr.write(`CSDK Docs MCP: indexed ${this.chunks.length} chunks, ${this.invertedIndex.size} terms\n`);
+    process.stderr.write(`CSDK Docs MCP: indexed ${this.chunks.length} chunks (${excluded} internal excluded), ${this.invertedIndex.size} terms\n`);
   }
 
   private loadFromMarkdown(docsDir: string): DocChunk[] {
@@ -133,7 +175,7 @@ class SearchEngine {
   search(
     query: string,
     options: { framework?: string; codeContext?: string; maxResults?: number } = {}
-  ): Array<{ text: string; source: string; heading: string; score: number }> {
+  ): Array<{ text: string; source: string; heading: string; score: number; tags?: string[] }> {
     const { framework, codeContext = '', maxResults = 8 } = options;
 
     const codeSignals = codeContext ? this.extractCodeSignals(codeContext) : [];
@@ -264,7 +306,12 @@ class DocStore {
     for (let i = 0; i < lines.length; i++) {
       const match = lines[i].match(/^###\s+(\S+\.md)\s+\(.*?\)\s*$/);
       if (match && i + 1 < lines.length) {
-        descriptions.set(match[1], lines[i + 1].trim());
+        // Collect all non-empty lines until next heading as the description
+        const descLines: string[] = [];
+        for (let j = i + 1; j < lines.length && !lines[j].startsWith('###'); j++) {
+          if (lines[j].trim()) descLines.push(lines[j].trim());
+        }
+        descriptions.set(match[1], descLines.join(' '));
       }
     }
     return descriptions;
@@ -403,9 +450,10 @@ server.tool(
       };
     }
 
-    const formatted = results.map((r, i) =>
-      `### Result ${i + 1} (score: ${r.score.toFixed(3)})\n**Source:** ${r.source} > ${r.heading}\n\n${r.text}`
-    ).join('\n\n---\n\n');
+    const formatted = results.map((r, i) => {
+      const warning = r.tags ? getWarnings(r.tags) : '';
+      return `### Result ${i + 1} (score: ${r.score.toFixed(3)})\n**Source:** ${r.source} > ${r.heading}${warning}\n\n${r.text}`;
+    }).join('\n\n---\n\n');
 
     return {
       content: [{
@@ -446,10 +494,16 @@ server.tool(
       };
     }
 
+    const tags = extractTags(doc.content);
+    const warning = getWarnings(tags);
+    const tagNote = tags.length > 0
+      ? `\n**Tags:** ${tags.join(', ')}${warning}\n`
+      : '';
+
     return {
       content: [{
         type: "text",
-        text: `## ${doc.path} (${doc.sizeKb} KB)\n\n${doc.content}`,
+        text: `## ${doc.path} (${doc.sizeKb} KB)${tagNote}\n\n${doc.content}`,
       }],
     };
   }

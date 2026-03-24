@@ -95,6 +95,17 @@ This works alongside the official [sisense-mcp-server](https://github.com/sisens
 
 Use both together: Sisense MCP tells Claude what data you have, this server tells Claude how to build the UI with the Compose SDK.
 
+## Tag handling
+
+The server respects Sisense SDK documentation tags:
+
+| Tag | Behavior |
+|-----|----------|
+| `@internal` | Completely excluded from search results and browse output |
+| `@sisenseInternal` | Completely excluded from search results and browse output |
+| `@beta` / `@alpha` | Included but flagged with a warning: "This API is marked as beta. It may change without notice." |
+| `fusionEmbed` | Included normally (indicates Fusion embedding features) |
+
 ## Updating docs
 
 Docs are pulled directly from the official [Sisense Compose SDK monorepo](https://github.com/sisense/compose-sdk-monorepo) (`docs-md/sdk/`). When Sisense releases a new SDK version:
@@ -109,6 +120,22 @@ To pull from a specific branch:
 ```bash
 ./scripts/update-docs.sh --branch dev
 ```
+
+## Validation
+
+Run the validation script after updating docs to verify completeness:
+
+```bash
+./scripts/validate-docs.sh
+```
+
+This checks:
+- chunks.json exists and has expected chunk count
+- All framework categories have doc files and INDEX.md
+- Key files are present and non-empty
+- No `@internal`/`@sisenseInternal` content leaked into public docs
+- Framework parity (React, Vue, Angular have equal file counts)
+- Build output is up to date
 
 ## Supported frameworks
 
