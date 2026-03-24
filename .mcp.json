@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "csdk-docs": {
+      "command": "node",
+      "args": ["dist/index.js"]
+    }
+  }
+}
