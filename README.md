@@ -14,7 +14,7 @@ Exposes two tools to Claude:
 The `search_csdk_docs` tool supports:
 - **Query** — natural language question or keyword search
 - **Framework filter** — restrict results to React, Vue, or Angular docs
-- **Code context** — pass in your current code and it extracts SDK imports, components, hooks, and factories to boost relevant results (same algorithm as the Sisense Compose SDK Playground AI agent)
+- **Code context** (optional) — if you tell Claude to include your current code with the search, it extracts SDK imports, components, hooks, and factories to boost relevant results. Try: "search the CSDK docs based on my current file"
 
 ## Install
 
