@@ -1,20 +1,35 @@
 # CSDK Docs MCP Server
 
-An MCP server that provides TF-IDF search over the Sisense Compose SDK documentation. Works with Claude Code, Claude Desktop, or any MCP client.
+An MCP server that provides both **structured browsing** and **TF-IDF search** over the Sisense Compose SDK documentation. Works with Claude Code, Claude Desktop, or any MCP client.
 
 ## What it does
 
-Exposes two tools to Claude:
+### Tools
 
 | Tool | Description |
 |------|-------------|
-| `search_csdk_docs` | TF-IDF search over 2,000+ doc chunks. Returns the most relevant documentation for any query. |
-| `list_csdk_topics` | Lists all available topics and categories. |
+| `search_csdk_docs` | TF-IDF search over 1,700+ doc chunks. Returns the most relevant documentation for any query. |
+| `browse_csdk_docs` | Browse docs by category (`guides`, `react`, `vue`, `angular`, `data`, `design`). List files in a category or read a specific file. |
+| `list_csdk_topics` | Lists all available categories, files, and their descriptions. |
 
-The `search_csdk_docs` tool supports:
-- **Query** — natural language question or keyword search
+### Resources
+
+The server also exposes structured resources that MCP clients can browse directly:
+
+| Resource | URI | Description |
+|----------|-----|-------------|
+| Full index | `csdk://index` | Complete documentation index across all categories |
+| Category index | `csdk://{category}` | List files in a category (e.g., `csdk://react`, `csdk://guides`) |
+| Doc file | `csdk://{category}/{file}` | Read a specific doc file (e.g., `csdk://react/charts.md`) |
+
+### Two ways to access docs
+
+1. **Search** (`search_csdk_docs`) — when you have a question and need the most relevant chunks. Uses TF-IDF scoring across 1,700+ pre-indexed chunks.
+2. **Browse** (`browse_csdk_docs` or resources) — when you know which category or file you need. Returns the full structured document, organized by the monorepo's own folder structure.
+
+The `search_csdk_docs` tool also supports:
 - **Framework filter** — restrict results to React, Vue, or Angular docs
-- **Code context** (optional) — if you tell Claude to include your current code with the search, it extracts SDK imports, components, hooks, and factories to boost relevant results. Try: "search the CSDK docs based on my current file"
+- **Code context** (optional) — pass a code snippet and it extracts SDK imports, components, hooks, and factories to boost relevant results
 
 ## Install
 
@@ -26,7 +41,9 @@ npm install && npm run build
 
 ## Connect to Claude Code
 
-Add to your project's `.mcp.json`:
+The repo includes `.mcp.json` — just open Claude Code in the repo directory and the server connects automatically.
+
+Or add to any project's `.mcp.json`:
 
 ```json
 {
@@ -56,26 +73,15 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Usage
 
-Once connected, Claude will automatically use `search_csdk_docs` when it needs SDK information. Just ask naturally:
+Once connected, Claude will automatically use the tools when it needs SDK information. Just ask naturally:
 
 ```
 "How do I query data with useExecuteQuery and display it in a ColumnChart?"
 "What are the props for ChartWidget?"
-"How do I use filterFactory.members to filter by specific values?"
 "How do I embed a Fusion dashboard using DashboardById?"
-"How do I decompose a dashboard with useGetDashboardModel and dashboardModelTranslator?"
-"How do I add drilldown to a chart?"
 "How do I customize chart colors with styleOptions?"
 "How do I use onBeforeRender to modify Highcharts options directly?"
 "How do I build a custom dashboard layout with useComposedDashboard?"
-"How do I set up the Chatbot component for natural language queries?"
-"What's the difference between Dashboard and DashboardById?"
-"How do I use filterFactory.dateRange to filter the last 30 days?"
-"How do I add a PivotTable with custom dataOptions?"
-"How do I use widgetModelTranslator to customize a Fusion widget?"
-"How do I generate a data model from my Sisense instance?"
-"How do I troubleshoot CORS issues?"
-"What formula functions are available for calculated measures?"
 ```
 
 ## Complements the Sisense MCP Server
@@ -109,4 +115,3 @@ To pull from a specific branch:
 - React
 - Vue
 - Angular
-

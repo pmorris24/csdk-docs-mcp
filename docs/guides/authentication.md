@@ -1,0 +1,280 @@
+# Authentication & Security
+
+There are some authentication and security concerns you need to address in order to start using Compose SDK in an application.
+
+## Authentication
+
+To retrieve data using Compose SDK you need to authenticate your application against a Sisense instance.
+
+There are several ways you can authenticate your application:
+
+- [Single Sign On (SSO)](#single-sign-on)
+- [Web Access Token (WAT)](#web-access-token)
+- [API Token](#api-token)
+
+a Sisense instance.
+
+There are several ways you can authenticate your application:
+
+- [Single Sign On (SSO)](#single-sign-on)
+- [Web Access Token (WAT)](#web-access-token)
+- [API Token](#api-token)
+
+### Single Sign On
+
+Single Sign On (SSO) allows the users of your application to authenticate with Sisense using an external identity provider.
+
+#### Set up SSO
+
+Set up your Sisense instance to authenticate users with SSO using one of the following:
+
+- [JSON Web Token (JWT)](https://docs.sisense.com/main/SisenseLinux/single-sign-on-using-json-web-token.htm?tocpath=Security%7CImplementing%20Single%20Sign-On%7C_____3)
+- [Security Assertion Markup Language 2.0 (SAML)](https://docs.sisense.com/main/SisenseLinux/single-sign-on-using-security-assertion-markup-language-20.htm?tocpath=Security%7CImplementing%20Single%20Sign-On%7C_____2)
+- [OpenID Connect](https://docs.sisense.com/main/SisenseLinux/single-sign-on-using-openid-connect.htm?tocpath=Security%7CImplementing%20Single%20Sign-On%7C_____4)
+
+##### Using the SSO Router Addon with JWT
+If your Sisense instance is configured to use the [SSO Router addon](https://www.sisense.com/marketplace/add-on/sso-router/) in order to support dynamic routing to various JWT endpoints, please use Compose SDK 2.6.0 or later.
+
+For more information on configuring SSO Router check [this knowledge base article](https://community.sisense.com/kb/add-ons_and_plug-ins/sso-router-plugin-usage-with-examples/4805), or contact Sisense support.
+
+::: tip Note
+If you're experiencing difficulties or unexpected behavior when using SSO, the cause may be a hidden feature configuration. To resolve the issue, you can:
+
+- Contact [support](https://www.sisense.com/support/) to validate you Fusion configuration settings
+- See this [community post](https://community.sisense.com/discussions/help_and_how_to/issue-with-sisense-compose-sdk-and-sso-authentication/18580/replies/18601#M40) to try to resolve the issue yourself
+:::
+
+#### Authenticate with SSO
+
+Once you’ve set up SSO access, you can use it to authenticate within your application:
+
+- For React apps use the `ssoEnabled` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  url="https://sisense-instance-url"
+  ssoEnabled=true
+>
+```
+
+- For Angular apps use the `ssoEnabled` property of the `SisenseContextConfig` object:
+
+```ts
+export const SISENSE_CONTEXT_CONFIG: SisenseContextConfig = {
+  url="https://sisense-instance-url"
+  ssoEnabled=true
+};
+```
+
+- For Vue apps use the `ssoEnabled` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  :url="https://sisense-instance-url"
+  :ssoEnabled="true"
+>
+```
+
+ue
+};
+```
+
+- For Vue apps use the `ssoEnabled` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  :url="https://sisense-instance-url"
+  :ssoEnabled="true"
+>
+```
+
+### Web Access Token
+
+Sisense Web Access Tokens (WATs) impersonate specific Sisense users. Typically, in a production environment you create a Sisense user specifically for using Compose SDK. You grant that user the permissions you want to expose in your application and use a WAT that impersonates that user.
+
+::: tip Note
+When using a Structured Token (By Value) you can enforce row level security using an `acl` claim. All other claims are not supported.
+:::
+
+#### Create a WAT
+
+Before creating a WAT, you need to [create a token configuration](https://docs.sisense.com/main/SisenseLinux/using-web-access-token.htm?tocpath=Security%7CSecuring%20Users%7C_____4#CreatingaTokenConfiguration) to generate a token secret and key ID.
+
+Once you have a token secret and key ID, you can generate a WAT to use in your application in one of the following ways:
+
+- [Go to Web Access Tokens in the Sisense UI](https://docs.sisense.com/main/SisenseLinux/using-web-access-token.htm?tocpath=Security%7CSecuring%20Users%7C_____4#OptionsforCreatingWebAccessTokens)
+- Send a request to the [wat/generate](https://developer.sisense.com/guides/restApi/v1/?platform=linux&spec=L2025.2#/web-access-tokens/generateWebAccessToken) endpoint of the Sisense REST API
+- [Use self-hosted token generation](https://docs.sisense.com/main/SisenseLinux/using-web-access-token.htm?tocpath=Security%7CSecuring%20Users%7C_____4#OptionsforCreatingWebAccessTokens)
+
+#### Authenticate with a WAT
+
+Once you’ve created a WAT, you can use it to authenticate within your application:
+
+- For React apps use the `wat` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  url="http://sisense-instance-url"
+  wat="eykZjkFhMGYzYmJl…"
+>
+```
+
+- For Angular apps use the `wat` property of the `SisenseContextConfig` object:
+
+```ts
+export const SISENSE_CONTEXT_CONFIG: SisenseContextConfig = {
+  url="http://sisense-instance-url"
+  wat="eykZjkFhMGYzYmJl…"
+};
+```
+
+- For Vue apps use the `wat` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  :url="http://sisense-instance-url"
+  :wat="eykZjkFhMGYzYmJl…"
+>
+```
+
+Jl…"
+};
+```
+
+- For Vue apps use the `wat` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  :url="http://sisense-instance-url"
+  :wat="eykZjkFhMGYzYmJl…"
+>
+```
+
+### API Token
+
+Sisense API Tokens are issued per user. Typically, you create a Sisense user specifically for using Compose SDK. You grant that user the permissions you want to expose in your application and use that user's API Token.
+
+:::warning
+Be sure to use API tokens in a secure manner. Typically, API tokens are not a good choice for production environments.
+:::
+
+#### Create an API Token
+
+You can get an API Token to use in your application in one of the following ways:
+
+- [Go to a user profile in the Sisense UI](https://developer.sisense.com/guides/restApi/using-rest-api.html#getting-the-api-token-from-user-profiles)
+- Send a request to the [authentication/login](https://developer.sisense.com/guides/restApi/v1/?platform=linux&spec=L2025.2#/authentication/login) endpoint of the Sisense REST API
+- Run the following command using the Compose SDK CLI tool:
+
+```sh
+npx @sisense/sdk-cli@latest get-api-token --url <your_instance_url> --username <username>
+```
+
+Notes:
+
+- Be sure to replace `<your_instance_url>` with the URL to your Sisense instance and `<username>` with the username of the user you want to create the API token for.
+- For Windows, use double quotes around the URL and username arguments. For Mac/Linux, only use double quotes for arguments that contain white space.
+
+#### Authenticate with an API token
+
+Once you’ve obtained an API token, you can use it to authenticate within your application:
+
+- For React apps use the `token` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  url="http://sisense-instance-url"
+  token="eRykZjVxkFdhMaGYzYmqJl..."
+>
+```
+
+- For Angular apps use the `token` property of the `SisenseContextConfig` object:
+
+```ts
+export const SISENSE_CONTEXT_CONFIG: SisenseContextConfig = {
+  url="http://sisense-instance-url"
+  token="eRykZjVxkFdhMaGYzYmqJl..."
+};
+```
+
+- For Vue apps use the `token` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  :url="http://sisense-instance-url"
+  :token="eRykZjVxkFdhMaGYzYmqJl..."
+>
+```
+
+- For Vue apps use the `token` property of the `<SisenseContextProvider />` component:
+
+```ts
+<SisenseContextProvider
+  :url="http://sisense-instance-url"
+  :token="eRykZjVxkFdhMaGYzYmqJl..."
+>
+```
+
+## Cross-Origin Resource Sharing (CORS)
+
+By default, browser same-origin policy prevents client-side web applications located in one domain from obtaining data from a different domain. That means an application you build with Compose SDK can't get data from your Sisense instance without some initial setup.
+
+To get around this problem, you enable [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) for specific origins for which you want to allow resource sharing. Doing so instructs the Sisense server to respond to requests from your application with a header that tells the browser your application can use the data returned from Sisense even though it comes from a different domain.
+
+#### Set up CORS
+
+Set up CORS on your Sisense instance using one of the following:
+
+- [Add your application's domain to the **CORS Allowed Origins** in the Sisense UI](https://docs.sisense.com/main/SisenseLinux/cross-origin-resource-sharing.htm?Highlight=cors#EnablingCORS)
+- Send a request to the [settings/system](https://developer.sisense.com/guides/restApi/v1/?platform=linux&spec=L2025.2#/settings/setSystemSettings) endpoint of the Sisense REST API and include your application's domain in the `allowedOrigins` array:
+
+```json
+"cors": {
+  "enabled": true,
+  "allowedOrigins": [
+    "https://your-application-url"
+  ]
+}
+```
+
+::: tip Notes
+
+- **Do not** include the trailing slash (`/`) when adding a domain to the **CORS Allowed Origins**
+- Save your settings changes after adding your domain.
+
+:::
+
+lication-url"
+  ]
+}
+```
+
+::: tip Notes
+
+- **Do not** include the trailing slash (`/`) when adding a domain to the **CORS Allowed Origins**
+- Save your settings changes after adding your domain.
+
+:::
+
+## Third-Party Cookies
+
+Most modern browsers block third-party cookies. This affects cookie-based authentications such as SSO.
+
+Therefore, the best practice is either to:
+
+- Use the same domain for the different apps and put it behind a specific path. This prevents Sisense cookies from being third-party cookies. For example: `companyA.com/analytics`.
+- Leverage the Web Access Tokens (WAT) feature for authentication. Note that WAT requires special licensing.
+- Allow third-party cookies via your browser settings. See this [doc](https://docs.sisense.com/main/SisenseLinux/3rd-party-cookies.htm) for detailed instructions.
+
+:::warning
+The Cookies Having Independent Partitioned State ([CHIPS](https://developers.google.com/privacy-sandbox/cookies/chips)) solution is not compatible with Compose SDK.
+:::
+
+
+<!-- Source: getting-started/quickstart.md -->
+
+Independent Partitioned State ([CHIPS](https://developers.google.com/privacy-sandbox/cookies/chips)) solution is not compatible with Compose SDK.
+:::
+
+
+<!-- Source: getting-started/quickstart.md -->

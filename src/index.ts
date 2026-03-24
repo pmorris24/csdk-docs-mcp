@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, readdirSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { readFileSync, readdirSync, statSync, existsSync } from "fs";
+import { join, resolve, relative } from "path";
 
 // ── Types ──
 
@@ -14,7 +14,16 @@ interface DocChunk {
   heading: string;
 }
 
-// ── TF-IDF Search Engine (ported from playground's rag-service.ts) ──
+interface DocFile {
+  path: string;       // relative path like "guides/charts.md"
+  category: string;   // "guides", "react", "vue", "angular", "data"
+  name: string;       // "charts.md"
+  content: string;
+  sizeKb: number;
+  description: string; // from INDEX.md or derived
+}
+
+// ── TF-IDF Search Engine ──
 
 const STOP_WORDS = new Set([
   'the','a','an','is','are','was','were','be','been','being','have','has','had',
@@ -41,13 +50,11 @@ class SearchEngine {
   private idf = new Map<string, number>();
 
   load(docsDir: string): void {
-    // Load from chunks.json if available
     const chunksPath = join(docsDir, 'chunks.json');
     try {
       const raw = readFileSync(chunksPath, 'utf-8');
       this.chunks = JSON.parse(raw);
     } catch {
-      // Fall back to reading all markdown files and chunking them
       this.chunks = this.loadFromMarkdown(docsDir);
     }
     this.buildIndex();
@@ -64,12 +71,10 @@ class SearchEngine {
         } else if (entry.endsWith('.md') && entry !== 'INDEX.md' && entry !== 'README.md') {
           const content = readFileSync(full, 'utf-8');
           const source = full.replace(docsDir + '/', '');
-          // Split by h1 headings
           const sections = content.split(/\n(?=# )/);
           for (const section of sections) {
             const headingMatch = section.match(/^# (.+)/);
             const heading = headingMatch?.[1] ?? 'General';
-            // Chunk into ~2000 char pieces
             const text = section.trim();
             if (text.length <= 2500) {
               if (text.length > 50) chunks.push({ text, source, heading });
@@ -189,24 +194,196 @@ class SearchEngine {
   }
 }
 
+// ── Structured Doc Loader ──
+
+class DocStore {
+  private files: DocFile[] = [];
+  private categories = new Map<string, DocFile[]>();
+
+  load(docsDir: string): void {
+    // Load structured docs from the skill-style directory layout
+    const structuredDir = join(docsDir, 'docs');
+    const dir = existsSync(structuredDir) ? structuredDir : docsDir;
+
+    const categories = ['guides', 'react', 'vue', 'angular', 'data'];
+    for (const cat of categories) {
+      const catDir = join(dir, cat);
+      if (!existsSync(catDir)) continue;
+
+      // Parse INDEX.md for descriptions
+      const descriptions = this.parseIndex(join(catDir, 'INDEX.md'));
+      const catFiles: DocFile[] = [];
+
+      for (const entry of readdirSync(catDir)) {
+        if (!entry.endsWith('.md') || entry === 'INDEX.md' || entry === 'README.md') continue;
+        const full = join(catDir, entry);
+        if (!statSync(full).isFile()) continue;
+        const content = readFileSync(full, 'utf-8');
+        const docFile: DocFile = {
+          path: `${cat}/${entry}`,
+          category: cat,
+          name: entry,
+          content,
+          sizeKb: Math.round(content.length / 1024),
+          description: descriptions.get(entry) ?? entry.replace('.md', ''),
+        };
+        catFiles.push(docFile);
+        this.files.push(docFile);
+      }
+      this.categories.set(cat, catFiles);
+    }
+
+    // Also load root-level design/supplemental docs
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (!entry.endsWith('.md') || !statSync(full).isFile()) continue;
+      if (entry === 'INDEX.md' || entry === 'README.md') continue;
+      const content = readFileSync(full, 'utf-8');
+      const docFile: DocFile = {
+        path: entry,
+        category: 'design',
+        name: entry,
+        content,
+        sizeKb: Math.round(content.length / 1024),
+        description: entry.replace('.md', '').replace(/_/g, ' '),
+      };
+      this.files.push(docFile);
+      if (!this.categories.has('design')) this.categories.set('design', []);
+      this.categories.get('design')!.push(docFile);
+    }
+
+    process.stderr.write(`CSDK Docs MCP: loaded ${this.files.length} structured doc files across ${this.categories.size} categories\n`);
+  }
+
+  private parseIndex(indexPath: string): Map<string, string> {
+    const descriptions = new Map<string, string>();
+    if (!existsSync(indexPath)) return descriptions;
+    const content = readFileSync(indexPath, 'utf-8');
+    // Parse lines like: ### charts.md (24 KB)\nDescription text
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const match = lines[i].match(/^###\s+(\S+\.md)\s+\(.*?\)\s*$/);
+      if (match && i + 1 < lines.length) {
+        descriptions.set(match[1], lines[i + 1].trim());
+      }
+    }
+    return descriptions;
+  }
+
+  getCategories(): string[] {
+    return [...this.categories.keys()];
+  }
+
+  getFilesInCategory(category: string): DocFile[] {
+    return this.categories.get(category) ?? [];
+  }
+
+  getFile(path: string): DocFile | undefined {
+    return this.files.find(f => f.path === path);
+  }
+
+  getAllFiles(): DocFile[] {
+    return this.files;
+  }
+
+  buildCategoryIndex(category: string): string {
+    const files = this.getFilesInCategory(category);
+    if (files.length === 0) return `No documentation found for category: ${category}`;
+    const lines = files.map(f => `- **${f.name}** (${f.sizeKb} KB) — ${f.description}`);
+    return `## ${category} documentation\n\n${lines.join('\n')}`;
+  }
+
+  buildFullIndex(): string {
+    const sections: string[] = [];
+    for (const [cat, files] of this.categories) {
+      const lines = files.map(f => `  - **${f.name}** (${f.sizeKb} KB) — ${f.description}`);
+      sections.push(`### ${cat}\n${lines.join('\n')}`);
+    }
+    return `## CSDK Documentation Structure\n\n${sections.join('\n\n')}\n\n**Total files:** ${this.files.length}`;
+  }
+}
+
 // ── Main ──
 
 const engine = new SearchEngine();
+const docStore = new DocStore();
 
-// Find docs — look for chunks.json relative to this script, or use env var
 const DOCS_DIR = process.env.CSDK_DOCS_DIR
   ?? resolve(new URL('.', import.meta.url).pathname, '..');
 
 engine.load(DOCS_DIR);
+docStore.load(DOCS_DIR);
 
 const server = new McpServer({
   name: "csdk-docs",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
+// ── Resources: Structured doc access ──
+
+// 1. Full index — lists all categories and files
+server.resource(
+  "csdk-index",
+  "csdk://index",
+  { description: "Complete index of all CSDK documentation files organized by category. Read this first to understand what documentation is available." },
+  async () => ({
+    contents: [{
+      uri: "csdk://index",
+      mimeType: "text/markdown",
+      text: docStore.buildFullIndex(),
+    }],
+  })
+);
+
+// 2. Category indexes
+for (const category of docStore.getCategories()) {
+  server.resource(
+    `csdk-${category}`,
+    `csdk://${category}`,
+    { description: `Index of ${category} documentation files. Lists all available ${category} docs with descriptions and sizes.` },
+    async () => ({
+      contents: [{
+        uri: `csdk://${category}`,
+        mimeType: "text/markdown",
+        text: docStore.buildCategoryIndex(category),
+      }],
+    })
+  );
+}
+
+// 3. Individual doc files via template
+server.resource(
+  "csdk-doc",
+  new ResourceTemplate("csdk://{category}/{file}", { list: undefined }),
+  { description: "Read a specific CSDK documentation file by category and filename." },
+  async (uri, { category, file }) => {
+    const path = `${category}/${file}`;
+    const doc = docStore.getFile(path);
+    if (!doc) {
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "text/plain",
+          text: `Documentation file not found: ${path}\n\nAvailable categories: ${docStore.getCategories().join(', ')}`,
+        }],
+      };
+    }
+    return {
+      contents: [{
+        uri: uri.href,
+        mimeType: "text/markdown",
+        text: doc.content,
+      }],
+    };
+  }
+);
+
+// ── Tools ──
+
+// 1. TF-IDF search (existing)
 server.tool(
   "search_csdk_docs",
-  "Search Sisense Compose SDK documentation using TF-IDF semantic search. Returns the most relevant documentation chunks for a given query. Use this to find API references, code examples, guides, and usage patterns.",
+  "Search Sisense Compose SDK documentation using TF-IDF search. Returns the most relevant documentation chunks for a given query. Use this for specific questions where you need targeted results.",
   {
     query: z.string().describe("The search query — e.g. 'how to create a bar chart with filters' or 'useExecuteQuery props'"),
     framework: z.enum(["react", "vue", "angular"]).optional().describe("Filter results to a specific framework. Omit to search all."),
@@ -239,49 +416,56 @@ server.tool(
   }
 );
 
+// 2. Browse docs by category (new — structured access)
+server.tool(
+  "browse_csdk_docs",
+  "Browse CSDK documentation by category. Returns a list of available doc files in a category, or the full content of a specific file. Use this when you know which category or file you need, instead of searching.",
+  {
+    category: z.enum(["guides", "react", "vue", "angular", "data", "design"]).describe("Documentation category to browse."),
+    file: z.string().optional().describe("Specific file to read, e.g. 'charts.md' or 'dashboards.md'. Omit to list all files in the category."),
+  },
+  async ({ category, file }) => {
+    if (!file) {
+      return {
+        content: [{
+          type: "text",
+          text: docStore.buildCategoryIndex(category),
+        }],
+      };
+    }
+
+    const path = `${category}/${file}`;
+    const doc = docStore.getFile(path);
+    if (!doc) {
+      const available = docStore.getFilesInCategory(category).map(f => f.name).join(', ');
+      return {
+        content: [{
+          type: "text",
+          text: `File not found: ${path}\n\nAvailable files in ${category}: ${available}`,
+        }],
+      };
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: `## ${doc.path} (${doc.sizeKb} KB)\n\n${doc.content}`,
+      }],
+    };
+  }
+);
+
+// 3. List topics (updated)
 server.tool(
   "list_csdk_topics",
-  "List available documentation topics and categories. Use this to understand what documentation is available before searching.",
+  "List all available documentation categories and files. Use this to understand the documentation structure before browsing or searching.",
   {},
-  async () => {
-    const topics = `## Available CSDK Documentation Topics
-
-### Framework API (React, Vue, Angular)
-- **Charts** — AreaChart, BarChart, ColumnChart, LineChart, PieChart, FunnelChart, ScatterChart, TreemapChart, SunburstChart, IndicatorChart, PolarChart, BoxplotChart, AreamapChart, ScattermapChart, AreaRangeChart
-- **Dashboards** — Dashboard, DashboardById, Widget, WidgetById, ChartWidget, PivotTableWidget, useComposedDashboard
-- **Contexts** — SisenseContextProvider, ThemeProvider
-- **Interfaces** — Chart props/styles, Dashboard props, Filter types, Theme settings, Data options, AI interfaces
-
-### Data API (shared)
-- **filterFactory** — members, greaterThan, lessThan, between, dateRange, contains, equals, etc.
-- **measureFactory** — sum, count, average, min, max, median, countDistinct, etc.
-- **analyticsFactory** — boxWhisker functions
-
-### Guides
-- Quickstart (React, Vue, Angular)
-- Authentication & Security
-- Embedded Dashboards
-- Drilldown
-- Chart Types
-- External Charts
-- Custom Widgets
-- Theming & Styling
-- Generative AI (NLG, NLQ, Chatbot)
-- Data Model
-- Internationalization
-- Tutorials
-- Troubleshooting
-- Formula Functions
-- Migration guides (0.x→1.0, 1.x→2.0)
-
-### Design
-- Chart design guidance
-- UI/UX best practices
-
-**Total indexed chunks:** ${engine.chunkCount}`;
-
-    return { content: [{ type: "text", text: topics }] };
-  }
+  async () => ({
+    content: [{
+      type: "text",
+      text: docStore.buildFullIndex() + `\n\n**Total indexed chunks for search:** ${engine.chunkCount}`,
+    }],
+  })
 );
 
 const transport = new StdioServerTransport();
